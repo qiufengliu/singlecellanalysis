@@ -1,0 +1,6 @@
+{
+  "final_workflow_outputs_dir": "s3://singleronbio-bi/workflow/P1/S1",
+  "final_call_logs_dir": "s3://singleronbio-bi/log/P1/S1",
+  "final_workflow_log_dir": "s3://singleronbio-bi/workflow_log/P1/S1",
+  "backend": "BI"
+}

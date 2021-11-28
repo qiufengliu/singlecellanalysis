@@ -1,0 +1,17 @@
+{
+  "cellranger_count_GEX.fq2s": [
+    "s3://singleronbio-ami/10x/L20112507X3-2-L20112507X3_combined_R2.fastq.gz"
+  ],
+  "cellranger_count_GEX.sample_name": "String",
+  "cellranger_count_GEX.fq1s": [
+    "s3://singleronbio-ami/10x/L20112507X3-2-L20112507X3_combined_R1.fastq.gz"
+  ],
+  "cellranger_count_GEX.transcriptome": "/usr/local/aws-cli/reference/10xgenomics/refdata-gex-GRCh38-2020-A",
+  "cellranger_count_GEX.runtime_attr_count": {
+    "cpu": 2, // optional
+    "memory_gb": 32,  // optional
+    "docker": "972172958149.dkr.ecr.cn-northwest-1.amazonaws.com.cn/singleronbio-cellranger:4.0.0",
+    "queue": "arn:aws-cn:batch:cn-northwest-1:972172958149:job-queue/default-BI"
+  },
+  "cellranger_count_GEX.expect_cells": "3000"
+}

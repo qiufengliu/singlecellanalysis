@@ -1,0 +1,20 @@
+version: 0.3
+
+phases:
+  pre_build:
+    commands:
+      - echo Logging in to Amazon ECR...
+      - aws ecr get-login-password --region "cn-northwest-1"| docker login --username AWS --password-stdin 632427418419.dkr.ecr.cn-northwest-1.amazonaws.com.cn
+  build:
+    commands:
+      - echo Build started on `date`
+      - echo Downloading cellranger
+      - wget -q https://singlecellanalysis.s3.cn-northwest-1.amazonaws.com.cn/cellranger-6.1.2.tar.gz -O cellranger.tar.gz
+      - echo Building the Docker image...
+      - docker build -t singlecellanalysis:6.1.0 .
+      - docker tag singlecellanalysis:6.1.0 632427418419.dkr.ecr.cn-northwest-1.amazonaws.com.cn/singlecellanalysis:6.1.0
+  post_build:
+    commands:
+      - echo Build completed on `date`
+      - echo Pushing the Docker image...
+      - docker push 632427418419.dkr.ecr.cn-northwest-1.amazonaws.com.cn/singlecellanalysis:6.1.0
