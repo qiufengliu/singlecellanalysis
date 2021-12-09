@@ -1,0 +1,223 @@
+---
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  (WWPS-GLS-WF-GWFCORE-LT) Creates an EC2 Launch Template for AWS Batch based
+  genomics workflows
+
+Mappings:
+  TagMap:
+    default:
+      architecture: "genomics-workflows"
+      solution: "default"
+      tags:
+        - Key: "architecture"
+          Value: "genomics-workflows"
+        - Key: "solution"
+          Value: "default"
+
+Parameters:
+  Namespace:
+    Type: String
+    Description: Namespace (e.g. project name) to use to label resources
+  LaunchTemplateNamePrefix:
+    Type: String
+    Default: gwfcore
+    Description: Name of the launch template. This will be made unique using the Stack ID.
+  DockerStorageVolumeSize:
+    Type: Number
+    Default: 50
+    Description: The initial size of the volume Docker will use for image and metadata storage (GB)
+  ElasticFileSystemID:
+    Type: String
+    Description: Reference Elastic File System ID
+  ArtifactRootUrl:
+    Type: String
+    Description: Artifact Root URL
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Required"
+        Parameters:
+          - Namespace
+          - ElasticFileSystemID
+      - Label:
+          default: "Optional"
+        Parameters:
+          - LaunchTemplateNamePrefix
+          - DockerStorageVolumeSize
+
+Conditions:
+  NoNamespace: !Equals [ !Ref Namespace, "" ]
+
+Resources:
+  EC2LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName:
+        Fn::Join:
+          - "-"
+          - - !Ref LaunchTemplateNamePrefix
+            - Fn::If:
+                - NoNamespace
+                - !Select [ 2, !Split [ "/", !Ref "AWS::StackId" ] ]
+                - !Ref Namespace
+
+      LaunchTemplateData:
+        # Used in tandem with UserData to check if the instance is provisioned
+        # correctly. It is important to terminate mis-provisioned instances before
+        # jobs are placed on them
+        InstanceInitiatedShutdownBehavior: terminate
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: architecture
+                Value: !FindInMap [ "TagMap", "default", "architecture" ]
+              - Key: Business Unit
+                Value: !Ref Namespace
+          - ResourceType: volume
+            Tags:
+              - Key: Business Unit
+                Value: !Ref Namespace
+
+        BlockDeviceMappings:
+          - Ebs:
+              DeleteOnTermination: True
+              VolumeSize: 30
+              VolumeType: gp3
+            DeviceName: /dev/xvda
+          - Ebs:
+              DeleteOnTermination: True
+              VolumeSize: !Ref DockerStorageVolumeSize
+              VolumeType: gp3
+            DeviceName: /dev/xvdba
+        UserData:
+          Fn::Base64:
+            Fn::Sub: |
+              MIME-Version: 1.0
+              Content-Type: multipart/mixed; boundary="==BOUNDARY=="
+
+              --==BOUNDARY==
+              Content-Type: text/cloud-config; charset="us-ascii"
+
+              #cloud-config
+              repo_update: true
+              repo_upgrade: security
+
+              packages:
+                - jq
+                - btrfs-progs
+                - sed
+                - git
+                - amazon-ssm-agent
+                - unzip
+                - wget
+                - curl
+                - amazon-efs-utils
+                - amazon-cloudwatch-agent
+
+              write_files:
+                - permissions: '0644'
+                  path: /opt/aws/amazon-cloudwatch-agent/etc/config.json
+                  content: |
+                    {
+                      "agent": {
+                        "logfile": "/opt/aws/amazon-cloudwatch-agent/logs/amazon-cloudwatch-agent.log"
+                      },
+                      "logs": {
+                        "logs_collected": {
+                          "files": {
+                            "collect_list": [
+                              {
+                                "file_path": "/opt/aws/amazon-cloudwatch-agent/logs/amazon-cloudwatch-agent.log",
+                                "log_group_name": "/aws/ecs/container-instance/${Namespace}",
+                                "log_stream_name": "/aws/ecs/container-instance/${Namespace}/{instance_id}/amazon-cloudwatch-agent.log"
+                              },
+                              {
+                                "file_path": "/var/log/cloud-init.log",
+                                "log_group_name": "/aws/ecs/container-instance/${Namespace}",
+                                "log_stream_name": "/aws/ecs/container-instance/${Namespace}/{instance_id}/cloud-init.log"
+                              },
+                              {
+                                "file_path": "/var/log/cloud-init-output.log",
+                                "log_group_name": "/aws/ecs/container-instance/${Namespace}",
+                                "log_stream_name": "/aws/ecs/container-instance/${Namespace}/{instance_id}/cloud-init-output.log"
+                              },
+                              {
+                                "file_path": "/var/log/ecs/ecs-init.log",
+                                "log_group_name": "/aws/ecs/container-instance/${Namespace}",
+                                "log_stream_name": "/aws/ecs/container-instance/${Namespace}/{instance_id}/ecs-init.log"
+                              },
+                              {
+                                "file_path": "/var/log/ecs/ecs-agent.log",
+                                "log_group_name": "/aws/ecs/container-instance/${Namespace}",
+                                "log_stream_name": "/aws/ecs/container-instance/${Namespace}/{instance_id}/ecs-agent.log"
+                              },
+                              {
+                                "file_path": "/var/log/ecs/ecs-volume-plugin.log",
+                                "log_group_name": "/aws/ecs/container-instance/${Namespace}",
+                                "log_stream_name": "/aws/ecs/container-instance/${Namespace}/{instance_id}/ecs-volume-plugin.log"
+                              },
+                              {
+                                "file_path": "/var/log/ebs-autoscale-install.log",
+                                "log_group_name": "/aws/ecs/container-instance/${Namespace}",
+                                "log_stream_name": "/aws/ecs/container-instance/${Namespace}/{instance_id}/ebs-autoscale-install.log"
+                              },
+                              {
+                                "file_path": "/var/log/ebs-autoscale.log",
+                                "log_group_name": "/aws/ecs/container-instance/${Namespace}",
+                                "log_stream_name": "/aws/ecs/container-instance/${Namespace}/{instance_id}/ebs-autoscale.log"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    }
+
+
+              runcmd:
+                # start the amazon-cloudwatch-agent
+                - /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c file:/opt/aws/amazon-cloudwatch-agent/etc/config.json
+
+                # install aws-cli v2 and copy the static binary in an easy to find location for bind-mounts into containers
+                - curl -s "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "/tmp/awscliv2.zip"
+                - unzip -q /tmp/awscliv2.zip -d /tmp
+                - /tmp/aws/install -b /usr/bin
+
+                # check that the aws-cli was actually installed. if not shutdown (terminate) the instance
+                - command -v aws || shutdown -P now
+
+                - mkdir -p /opt/aws-cli/bin
+                - cp -a $(dirname $(find /usr/local/aws-cli -name 'aws' -type f))/. /opt/aws-cli/bin/
+
+                # mount reference disk
+                - mkdir -p /usr/local/aws-cli/reference
+                - mount -t efs -o tls ${ElasticFileSystemID}:/ /usr/local/aws-cli/reference
+
+                # set environment variables for provisioning
+                - export ARTIFACT_S3_ROOT_URL=${ArtifactRootUrl}
+                - export AWS_DEFAULT_REGION=$(curl --silent http://169.254.169.254/latest/dynamic/instance-identity/document | jq -r .region)
+                - aws configure set default.region $AWS_DEFAULT_REGION
+
+                # enable ecs spot instance draining
+                - echo ECS_ENABLE_SPOT_INSTANCE_DRAINING=true >> /etc/ecs/ecs.config
+
+                # pull docker images only if missing
+                - echo ECS_IMAGE_PULL_BEHAVIOR=prefer-cached >> /etc/ecs/ecs.config
+
+                # retrieve and install amazon-ebs-autoscale
+                - cd /opt
+                - aws s3 sync --no-progress $ARTIFACT_S3_ROOT_URL ./
+                - chmod a+x /opt/ecs-additions/provision.sh
+                - /opt/ecs-additions/provision.sh
+
+              --==BOUNDARY==--
+
+Outputs:
+  LaunchTemplateId:
+    Description: >-
+      EC2 Launch Template ID to use when creating AWS Batch compute environments
+      for genomics workflows
+    Value: !Ref EC2LaunchTemplate
+...

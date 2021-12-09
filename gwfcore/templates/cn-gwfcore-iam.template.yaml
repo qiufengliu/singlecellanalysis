@@ -1,0 +1,131 @@
+---
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  (WWPS-GLS-WF-GWFCORE-IAM) Creates IAM roles to use with AWS Batch scalable genomics
+  workflow environment.
+Parameters:
+  Namespace:
+    Type: String
+    Description: Namespace (e.g. project name) to use to label resources
+
+  S3BucketName:
+    Type: String
+    Description: The name of the S3 bucket which will store the results of genomics analyses.
+Resources:
+  BatchJobRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Policies:
+        - PolicyName: !Sub S3Bucket-Access-${AWS::Region}
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Deny
+                Resource: !Join [ "", [ "arn:aws-cn:s3:::", !Ref S3BucketName ] ]
+                Action:
+                  - "s3:Delete*"
+                  - "s3:PutBucket*"
+              - Effect: Allow
+                Resource: !Join [ "", [ "arn:aws-cn:s3:::", !Ref S3BucketName ] ]
+                Action:
+                  - "s3:ListBucket*"
+              - Effect: Allow
+                Resource: !Join [ "", [ "arn:aws-cn:s3:::", !Ref S3BucketName, "/*" ] ]
+                Action:
+                  - "s3:*"
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - "ecs-tasks.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+  BatchInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - "ec2.amazonaws.com.cn"
+            Action:
+              - "sts:AssumeRole"
+      Policies:
+        - PolicyName: !Sub S3Bucket-Access-${AWS::Region}
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Sid: S3BucketAllowAllObjectOps
+                Effect: Allow
+                Resource:
+                  - !Join [ "", [ "arn:aws-cn:s3:::", !Ref S3BucketName ] ]
+                  - !Join [ "", [ "arn:aws-cn:s3:::", !Ref S3BucketName, "/*" ] ]
+                Action:
+                  - "s3:*"
+
+        # required for amazon-ebs-autoscale to resize filesystems
+        - PolicyName: !Sub Autoscale-EBS-${AWS::Region}
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              Effect: Allow
+              Action:
+                - "ec2:CreateTags"
+                - "ec2:CreateVolume"
+                - "ec2:AttachVolume"
+                - "ec2:DeleteVolume"
+                - "ec2:ModifyInstanceAttribute"
+                - "ec2:DescribeVolumeAttribute"
+                - "ec2:DescribeVolumes"
+                - "ec2:DescribeVolumeStatus"
+              Resource: "*"
+
+      ManagedPolicyArns:
+        - "arn:aws-cn:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role"
+        - "arn:aws-cn:iam::aws:policy/AmazonS3ReadOnlyAccess"
+        - "arn:aws-cn:iam::aws:policy/CloudWatchAgentServerPolicy"
+  BatchInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - Ref: BatchInstanceRole
+  BatchSpotFleetRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - "spotfleet.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      ManagedPolicyArns:
+        - "arn:aws-cn:iam::aws:policy/service-role/AmazonEC2SpotFleetTaggingRole"
+  BatchServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: batch.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - "arn:aws-cn:iam::aws:policy/service-role/AWSBatchServiceRole"
+Outputs:
+  BatchJobRoleArn:
+    Value: !GetAtt BatchJobRole.Arn
+  BatchServiceRoleArn:
+    Value: !GetAtt BatchServiceRole.Arn
+  BatchSpotFleetRoleArn:
+    Value: !GetAtt BatchSpotFleetRole.Arn
+  BatchInstanceProfileArn:
+    Value: !GetAtt BatchInstanceProfile.Arn
+...
